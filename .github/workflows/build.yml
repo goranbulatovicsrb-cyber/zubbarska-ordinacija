@@ -13,9 +13,8 @@ jobs:
       contents: write
 
     steps:
-      - name: Clone repository
-        shell: cmd
-        run: git clone https://github.com/%GITHUB_REPOSITORY%.git .
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install Qt
         shell: powershell
@@ -37,11 +36,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "pkg"
           Copy-Item "build\DentaPro.exe" "pkg\"
-          $env:PATH += ";C:\Qt\6.5.3\msvc2019_64\bin"
           & "C:\Qt\6.5.3\msvc2019_64\bin\windeployqt.exe" --release --no-translations --sql "pkg\DentaPro.exe"
           $sql = "C:\Qt\6.5.3\msvc2019_64\plugins\sqldrivers\qsqlite.dll"
           New-Item -ItemType Directory -Force -Path "pkg\sqldrivers"
-          if (Test-Path $sql) { Copy-Item $sql "pkg\sqldrivers\" -Force; Write-Host "SQLite OK" }
+          if (Test-Path $sql) { Copy-Item $sql "pkg\sqldrivers\" -Force }
           Compress-Archive -Path "pkg\*" -DestinationPath "DentaPro-Windows-x64.zip" -Force
 
       - name: Upload artifact
@@ -52,12 +50,12 @@ jobs:
           retention-days: 30
 
       - name: Create Release
-        shell: powershell
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "DentaPro v1.0.${{ github.run_number }}"
+          body: "Preuzmi ZIP, raspakuj, pokreni DentaPro.exe"
+          files: DentaPro-Windows-x64.zip
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = "v1.0.${{ github.run_number }}"
-          gh release create $tag "DentaPro-Windows-x64.zip" `
-            --repo $env:GITHUB_REPOSITORY `
-            --title "DentaPro $tag" `
-            --notes "Preuzmi ZIP, raspakuj, pokreni DentaPro.exe"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
