@@ -7,6 +7,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-windows:
     name: Windows Qt6 MSVC
@@ -18,14 +21,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Qt 6.5
-        uses: jurplel/install-qt-action@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
-          version: '6.5.3'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2019_64'
-          cache: false
+          python-version: '3.12'
+
+      - name: Install Qt via aqtinstall
+        shell: powershell
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 6.5.3 win64_msvc2019_64 `
+            --outputdir C:\Qt `
+            --modules qtmultimedia
+          echo "Qt installed"
+          $qtDir = "C:\Qt\6.5.3\msvc2019_64"
+          echo "QT_DIR=$qtDir" >> $env:GITHUB_ENV
+          echo "$qtDir\bin" >> $env:GITHUB_PATH
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -34,7 +45,11 @@ jobs:
 
       - name: Configure CMake
         shell: cmd
-        run: cmake -B build -S . -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
+        run: |
+          cmake -B build -S . ^
+            -G "NMake Makefiles" ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_PREFIX_PATH=C:\Qt\6.5.3\msvc2019_64
 
       - name: Build
         shell: cmd
@@ -48,28 +63,29 @@ jobs:
           New-Item -ItemType Directory -Force -Path "pkg"
           Copy-Item "build\DentaPro.exe" "pkg\"
 
-          windeployqt --release --no-translations --sql "pkg\DentaPro.exe"
+          & "C:\Qt\6.5.3\msvc2019_64\bin\windeployqt.exe" `
+            --release --no-translations --sql `
+            "pkg\DentaPro.exe"
 
-          # Ensure sqldrivers folder has qsqlite.dll
-          $dest = "pkg\sqldrivers"
-          New-Item -ItemType Directory -Force -Path $dest
-
-          $found = Get-ChildItem -Path "$env:RUNNER_TOOL_CACHE" -Recurse -Filter "qsqlite.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -eq $found) {
-            $found = Get-ChildItem -Path "C:\Qt" -Recurse -Filter "qsqlite.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # Copy SQLite plugin
+          $sqlSrc = "C:\Qt\6.5.3\msvc2019_64\plugins\sqldrivers\qsqlite.dll"
+          $sqlDst = "pkg\sqldrivers"
+          New-Item -ItemType Directory -Force -Path $sqlDst
+          if (Test-Path $sqlSrc) {
+            Copy-Item $sqlSrc $sqlDst -Force
+            Write-Host "OK: qsqlite.dll copied"
+          } else {
+            Write-Host "WARNING: qsqlite.dll not found at $sqlSrc"
           }
-          if ($null -ne $found) {
-            Write-Host "Found qsqlite.dll: $($found.FullName)"
-            Copy-Item $found.FullName $dest -Force
-          }
 
-          Write-Host "=== Package contents ==="
+          Write-Host "=== Package ==="
           Get-ChildItem "pkg" -Recurse | Select-Object FullName
 
-      - name: Zip
+      - name: Create ZIP
         shell: powershell
         run: |
-          Compress-Archive -Path "pkg\*" -DestinationPath "DentaPro-Windows-x64.zip" -Force
+          Compress-Archive -Path "pkg\*" `
+            -DestinationPath "DentaPro-Windows-x64.zip" -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -87,7 +103,117 @@ jobs:
           body: |
             ## DentaPro - Zubarska Ordinacija
             1. Preuzmi DentaPro-Windows-x64.zip
-            2. Raspakuj ZIP
+            2. Raspakuj ZIP u bilo koji folder
+            3. Pokreni DentaPro.exe
+          files: DentaPro-Windows-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+name: Build DentaPro Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-windows:
+    name: Windows Qt6 MSVC
+    runs-on: windows-2022
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Qt via aqtinstall
+        shell: powershell
+        run: |
+          pip install aqtinstall
+          aqt install-qt windows desktop 6.5.3 win64_msvc2019_64 `
+            --outputdir C:\Qt `
+            --modules qtmultimedia
+          echo "Qt installed"
+          $qtDir = "C:\Qt\6.5.3\msvc2019_64"
+          echo "QT_DIR=$qtDir" >> $env:GITHUB_ENV
+          echo "$qtDir\bin" >> $env:GITHUB_PATH
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure CMake
+        shell: cmd
+        run: |
+          cmake -B build -S . ^
+            -G "NMake Makefiles" ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_PREFIX_PATH=C:\Qt\6.5.3\msvc2019_64
+
+      - name: Build
+        shell: cmd
+        run: |
+          cd build
+          nmake
+
+      - name: Deploy
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "pkg"
+          Copy-Item "build\DentaPro.exe" "pkg\"
+
+          & "C:\Qt\6.5.3\msvc2019_64\bin\windeployqt.exe" `
+            --release --no-translations --sql `
+            "pkg\DentaPro.exe"
+
+          # Copy SQLite plugin
+          $sqlSrc = "C:\Qt\6.5.3\msvc2019_64\plugins\sqldrivers\qsqlite.dll"
+          $sqlDst = "pkg\sqldrivers"
+          New-Item -ItemType Directory -Force -Path $sqlDst
+          if (Test-Path $sqlSrc) {
+            Copy-Item $sqlSrc $sqlDst -Force
+            Write-Host "OK: qsqlite.dll copied"
+          } else {
+            Write-Host "WARNING: qsqlite.dll not found at $sqlSrc"
+          }
+
+          Write-Host "=== Package ==="
+          Get-ChildItem "pkg" -Recurse | Select-Object FullName
+
+      - name: Create ZIP
+        shell: powershell
+        run: |
+          Compress-Archive -Path "pkg\*" `
+            -DestinationPath "DentaPro-Windows-x64.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DentaPro-Windows-x64
+          path: DentaPro-Windows-x64.zip
+          retention-days: 30
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "DentaPro v1.0.${{ github.run_number }}"
+          body: |
+            ## DentaPro - Zubarska Ordinacija
+            1. Preuzmi DentaPro-Windows-x64.zip
+            2. Raspakuj ZIP u bilo koji folder
             3. Pokreni DentaPro.exe
           files: DentaPro-Windows-x64.zip
         env:
