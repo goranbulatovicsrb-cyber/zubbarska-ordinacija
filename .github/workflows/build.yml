@@ -40,23 +40,83 @@ jobs:
           cd build
           nmake
 
-      - name: Deploy Qt runtime
+      - name: Prepare release package
+        shell: powershell
         run: |
+          # Create output folder
           New-Item -ItemType Directory -Force -Path "release_package"
+          
+          # Copy the EXE
           Copy-Item "build\DentaPro.exe" "release_package\"
-          windeployqt --release --no-translations --no-system-d3d-compiler --no-opengl-sw "release_package\DentaPro.exe"
-
-      - name: Ensure SQLite plugin present
-        run: |
-          $sqldrivers = "${{ env.Qt6_DIR }}\plugins\sqldrivers"
+          
+          # Run windeployqt to copy all required Qt DLLs
+          windeployqt `
+            --release `
+            --no-translations `
+            --no-system-d3d-compiler `
+            --no-opengl-sw `
+            --sql `
+            "release_package\DentaPro.exe"
+          
+          # Extra: manually ensure sqldrivers/qsqlite.dll is present
+          $pluginDirs = @(
+            "${{ env.Qt6_DIR }}\plugins\sqldrivers",
+            "${{ env.QT_ROOT_DIR }}\plugins\sqldrivers",
+            "${{ env.Qt6_DIR }}\..\plugins\sqldrivers"
+          )
           $dest = "release_package\sqldrivers"
-          if (!(Test-Path $dest)) { New-Item -ItemType Directory -Path $dest }
-          if (Test-Path "$sqldrivers\qsqlite.dll") {
-            Copy-Item "$sqldrivers\qsqlite.dll" $dest
+          New-Item -ItemType Directory -Force -Path $dest
+          
+          foreach ($dir in $pluginDirs) {
+            Write-Host "Checking: $dir"
+            if (Test-Path "$dir\qsqlite.dll") {
+              Write-Host "Found qsqlite.dll in $dir"
+              Copy-Item "$dir\qsqlite.dll" $dest -Force
+              break
+            }
+          }
+          
+          # Also try to find it anywhere in Qt installation
+          $qtRoot = Split-Path -Parent "${{ env.Qt6_DIR }}"
+          $sqliteFiles = Get-ChildItem -Path $qtRoot -Recurse -Filter "qsqlite.dll" -ErrorAction SilentlyContinue
+          foreach ($f in $sqliteFiles) {
+            Write-Host "Found: $($f.FullName)"
+            Copy-Item $f.FullName $dest -Force
+          }
+          
+          # Verify
+          Write-Host "=== release_package contents ==="
+          Get-ChildItem "release_package" -Recurse | Select-Object FullName
+          
+          # Check sqlite is there
+          if (!(Test-Path "release_package\sqldrivers\qsqlite.dll")) {
+            Write-Host "WARNING: qsqlite.dll not found - SQL features may not work"
+          } else {
+            Write-Host "OK: qsqlite.dll present"
           }
 
-      - name: Create ZIP archive
-        run: Compress-Archive -Path "release_package\*" -DestinationPath "DentaPro-Windows-x64.zip" -Force
+      - name: Add info file
+        shell: powershell
+        run: |
+          @"
+          DentaPro v1.0 - Sistem za upravljanje zubarskom ordinacijom
+          =============================================================
+          
+          POKRETANJE: DentaPro.exe
+          
+          Podaci se cuvaju u:
+            %APPDATA%\DentaPro\dentapro.db
+          
+          Potpisi pacijenata:
+            %APPDATA%\DentaPro\signatures\
+          
+          NAPOMENA: Ne premjestajte ili brisite foldere pored DentaPro.exe
+          "@ | Out-File -FilePath "release_package\POKRETANJE.txt" -Encoding utf8
+
+      - name: Create ZIP
+        shell: powershell
+        run: |
+          Compress-Archive -Path "release_package\*" -DestinationPath "DentaPro-Windows-x64.zip" -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -65,17 +125,21 @@ jobs:
           path: DentaPro-Windows-x64.zip
           retention-days: 30
 
-      - name: Create Release
+      - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: "DentaPro v1.0.${{ github.run_number }}"
           body: |
-            ## DentaPro
-            1. Preuzmi DentaPro-Windows-x64.zip
-            2. Raspakuj ZIP
-            3. Pokreni DentaPro.exe
+            ## DentaPro - Zubarska Ordinacija
+            
+            ### Instalacija:
+            1. Preuzmi `DentaPro-Windows-x64.zip`
+            2. Raspakuj ZIP u npr. `C:\DentaPro\`
+            3. Pokreni `DentaPro.exe`
+            
+            > Ne trebas instalirati Qt - sve je ukljuceno u ZIP.
           files: DentaPro-Windows-x64.zip
           draft: false
           prerelease: false
