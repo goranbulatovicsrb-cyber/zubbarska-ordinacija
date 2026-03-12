@@ -1,0 +1,260 @@
+name: Build DentaPro Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows (Qt6 + MSVC)
+    runs-on: windows-2022
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Install Qt 6.5 ───────────────────────────────────────────────
+      - name: Install Qt 6.5
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          cache: true
+
+      # ── 3. Setup MSVC developer environment ─────────────────────────────
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ── 4. Configure CMake ───────────────────────────────────────────────
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . `
+            -G "NMake Makefiles" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+      # ── 5. Build ─────────────────────────────────────────────────────────
+      - name: Build
+        run: |
+          cd build
+          nmake
+
+      # ── 6. Deploy Qt runtime (windeployqt) ──────────────────────────────
+      - name: Deploy Qt runtime
+        run: |
+          New-Item -ItemType Directory -Force -Path "release_package"
+          Copy-Item "build\DentaPro.exe" "release_package\"
+          windeployqt `
+            --release `
+            --no-translations `
+            --no-system-d3d-compiler `
+            --no-opengl-sw `
+            "release_package\DentaPro.exe"
+
+      # ── 7. Add SQL driver (SQLite) ───────────────────────────────────────
+      - name: Ensure SQLite plugin present
+        run: |
+          $sqldrivers = "${{ env.Qt6_DIR }}\plugins\sqldrivers"
+          $dest = "release_package\sqldrivers"
+          if (!(Test-Path $dest)) { New-Item -ItemType Directory -Path $dest }
+          if (Test-Path "$sqldrivers\qsqlite.dll") {
+            Copy-Item "$sqldrivers\qsqlite.dll" $dest
+          }
+
+      # ── 8. Create README inside package ──────────────────────────────────
+      - name: Add launcher README
+        run: |
+          @"
+          DentaPro — Sistem za upravljanje zubarskom ordinacijom
+          ======================================================
+          
+          Pokretanje:
+            Dvaput kliknite na DentaPro.exe
+          
+          Podaci se čuvaju u:
+            %APPDATA%\DentaPro\dentapro.db
+          
+          Potpisi pacijenata se čuvaju u:
+            %APPDATA%\DentaPro\signatures\
+          
+          Verzija: 1.0
+          "@ | Out-File -FilePath "release_package\POKRETANJE.txt" -Encoding utf8
+
+      # ── 9. Zip the package ───────────────────────────────────────────────
+      - name: Create ZIP archive
+        run: |
+          Compress-Archive `
+            -Path "release_package\*" `
+            -DestinationPath "DentaPro-Windows-x64.zip" `
+            -Force
+
+      # ── 10. Upload artifact ──────────────────────────────────────────────
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DentaPro-Windows-x64
+          path: DentaPro-Windows-x64.zip
+          retention-days: 30
+
+      # ── 11. Create GitHub Release (on push to main) ──────────────────────
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "DentaPro v1.0.${{ github.run_number }}"
+          body: |
+            ## DentaPro — Sistem za upravljanje zubarskom ordinacijom
+            
+            ### Šta je novo:
+            - Automatski build iz GitHub Actions
+            
+            ### Instalacija:
+            1. Preuzmite `DentaPro-Windows-x64.zip`
+            2. Raspakujte ZIP u bilo koji folder
+            3. Pokrenite `DentaPro.exe`
+            
+            > **Napomena:** Ne trebate instalirati Qt - sve je uključeno u ZIP.
+          files: DentaPro-Windows-x64.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+name: Build DentaPro Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Windows (Qt6 + MSVC)
+    runs-on: windows-2022
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Install Qt 6.5 ───────────────────────────────────────────────
+      - name: Install Qt 6.5
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.5.3'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2019_64'
+          cache: true
+
+      # ── 3. Setup MSVC developer environment ─────────────────────────────
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # ── 4. Configure CMake ───────────────────────────────────────────────
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . `
+            -G "NMake Makefiles" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+      # ── 5. Build ─────────────────────────────────────────────────────────
+      - name: Build
+        run: |
+          cd build
+          nmake
+
+      # ── 6. Deploy Qt runtime (windeployqt) ──────────────────────────────
+      - name: Deploy Qt runtime
+        run: |
+          New-Item -ItemType Directory -Force -Path "release_package"
+          Copy-Item "build\DentaPro.exe" "release_package\"
+          windeployqt `
+            --release `
+            --no-translations `
+            --no-system-d3d-compiler `
+            --no-opengl-sw `
+            "release_package\DentaPro.exe"
+
+      # ── 7. Add SQL driver (SQLite) ───────────────────────────────────────
+      - name: Ensure SQLite plugin present
+        run: |
+          $sqldrivers = "${{ env.Qt6_DIR }}\plugins\sqldrivers"
+          $dest = "release_package\sqldrivers"
+          if (!(Test-Path $dest)) { New-Item -ItemType Directory -Path $dest }
+          if (Test-Path "$sqldrivers\qsqlite.dll") {
+            Copy-Item "$sqldrivers\qsqlite.dll" $dest
+          }
+
+      # ── 8. Create README inside package ──────────────────────────────────
+      - name: Add launcher README
+        run: |
+          @"
+          DentaPro — Sistem za upravljanje zubarskom ordinacijom
+          ======================================================
+          
+          Pokretanje:
+            Dvaput kliknite na DentaPro.exe
+          
+          Podaci se čuvaju u:
+            %APPDATA%\DentaPro\dentapro.db
+          
+          Potpisi pacijenata se čuvaju u:
+            %APPDATA%\DentaPro\signatures\
+          
+          Verzija: 1.0
+          "@ | Out-File -FilePath "release_package\POKRETANJE.txt" -Encoding utf8
+
+      # ── 9. Zip the package ───────────────────────────────────────────────
+      - name: Create ZIP archive
+        run: |
+          Compress-Archive `
+            -Path "release_package\*" `
+            -DestinationPath "DentaPro-Windows-x64.zip" `
+            -Force
+
+      # ── 10. Upload artifact ──────────────────────────────────────────────
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DentaPro-Windows-x64
+          path: DentaPro-Windows-x64.zip
+          retention-days: 30
+
+      # ── 11. Create GitHub Release (on push to main) ──────────────────────
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "DentaPro v1.0.${{ github.run_number }}"
+          body: |
+            ## DentaPro — Sistem za upravljanje zubarskom ordinacijom
+            
+            ### Šta je novo:
+            - Automatski build iz GitHub Actions
+            
+            ### Instalacija:
+            1. Preuzmite `DentaPro-Windows-x64.zip`
+            2. Raspakujte ZIP u bilo koji folder
+            3. Pokrenite `DentaPro.exe`
+            
+            > **Napomena:** Ne trebate instalirati Qt - sve je uključeno u ZIP.
+          files: DentaPro-Windows-x64.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
