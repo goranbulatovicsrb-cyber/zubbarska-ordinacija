@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(DentaPro VERSION 1.0.0 LANGUAGES CXX)
+project(DentaPro VERSION 1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,20 +7,10 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# ── Qt detection (Qt6 first, fall back to Qt5) ───────────────────────────────
-find_package(Qt6 QUIET COMPONENTS Core Widgets Sql PrintSupport)
-if(Qt6_FOUND)
-    set(QT_FOUND TRUE)
-    set(QT_LIBS Qt6::Core Qt6::Widgets Qt6::Sql Qt6::PrintSupport)
-    message(STATUS "Using Qt6")
-else()
-    find_package(Qt5 5.15 REQUIRED COMPONENTS Core Widgets Sql PrintSupport)
-    set(QT_FOUND TRUE)
-    set(QT_LIBS Qt5::Core Qt5::Widgets Qt5::Sql Qt5::PrintSupport)
-    message(STATUS "Using Qt5")
-endif()
+find_package(Qt6 REQUIRED COMPONENTS
+    Core Widgets Sql PrintSupport
+)
 
-# ── Sources ──────────────────────────────────────────────────────────────────
 set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
@@ -32,6 +22,8 @@ set(SOURCES
     src/reportgenerator.cpp
     src/clinicsettings.cpp
     src/clinicsettingsdialog.cpp
+    src/statisticswidget.cpp
+    src/exportmanager.cpp
 )
 
 set(HEADERS
@@ -45,56 +37,27 @@ set(HEADERS
     src/reportgenerator.h
     src/clinicsettings.h
     src/clinicsettingsdialog.h
+    src/statisticswidget.h
+    src/exportmanager.h
 )
 
-# ── Resources ─────────────────────────────────────────────────────────────────
-set(RESOURCES resources/resources.qrc)
-
-# ── Platform-specific ────────────────────────────────────────────────────────
-if(WIN32)
-    # Windows: GUI app (no console), app icon
-    set(WIN_ICON "")
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc")
-        set(WIN_ICON resources/app.rc)
-    endif()
-    add_executable(DentaPro WIN32 ${SOURCES} ${HEADERS} ${RESOURCES} ${WIN_ICON})
-elseif(APPLE)
-    set(MACOSX_BUNDLE_ICON_FILE DentaPro.icns)
-    add_executable(DentaPro MACOSX_BUNDLE ${SOURCES} ${HEADERS} ${RESOURCES})
-else()
-    add_executable(DentaPro ${SOURCES} ${HEADERS} ${RESOURCES})
-endif()
-
-# ── Link ──────────────────────────────────────────────────────────────────────
-target_link_libraries(DentaPro PRIVATE ${QT_LIBS})
-
-# ── Include paths ─────────────────────────────────────────────────────────────
-target_include_directories(DentaPro PRIVATE src)
-
-# ── Install ───────────────────────────────────────────────────────────────────
-install(TARGETS DentaPro
-    BUNDLE  DESTINATION .
-    RUNTIME DESTINATION bin
+set(RESOURCES
+    resources/resources.qrc
 )
 
-# ── Post-build: copy DLL's on Windows (windeployqt) ──────────────────────────
-if(WIN32)
-    if(Qt6_FOUND)
-        get_target_property(_qmake_executable Qt6::qmake IMPORTED_LOCATION)
-    else()
-        get_target_property(_qmake_executable Qt5::qmake IMPORTED_LOCATION)
-    endif()
-    get_filename_component(_qt_bin_dir "${_qmake_executable}" DIRECTORY)
-    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin_dir}")
+qt_add_executable(DentaPro
+    ${SOURCES}
+    ${HEADERS}
+    ${RESOURCES}
+)
 
-    if(WINDEPLOYQT_EXECUTABLE)
-        add_custom_command(TARGET DentaPro POST_BUILD
-            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
-                    --verbose 0
-                    --no-compiler-runtime
-                    --no-translations
-                    "$<TARGET_FILE:DentaPro>"
-            COMMENT "Deploying Qt runtime DLLs..."
-        )
-    endif()
-endif()
+target_link_libraries(DentaPro PRIVATE
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::Sql
+    Qt6::PrintSupport
+)
+
+set_target_properties(DentaPro PROPERTIES
+    WIN32_EXECUTABLE TRUE
+)
