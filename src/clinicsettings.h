@@ -1,28 +1,27 @@
 #pragma once
 #include <QString>
+#include <QStringList>
 #include <QPixmap>
 
-// Singleton that holds clinic branding settings
-// persisted via QSettings (registry on Windows)
 class ClinicSettings
 {
 public:
     static ClinicSettings& instance();
-
-    // Load from persistent storage
     void load();
-    // Save to persistent storage
     void save();
 
-    // ── Fields ──────────────────────────────────────────────────────────────
-    QString clinicName;
-    QString clinicSubtitle;   // e.g. "Stomatološka ordinacija"
-    QString clinicAddress;
-    QString clinicPhone;
-    QString clinicEmail;
-    QString logoPath;         // absolute path to logo image file
+    // Branding
+    QString     clinicName;
+    QString     clinicSubtitle;
+    QString     clinicAddress;
+    QString     clinicPhone;
+    QString     clinicEmail;
+    QString     logoPath;
 
-    // Cached pixmap (loaded on demand)
+    // Doctors
+    QStringList doctors;
+    QString     defaultDoctor;
+
     QPixmap logo() const;
     bool    hasLogo() const;
 
