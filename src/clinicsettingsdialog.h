@@ -3,6 +3,7 @@
 class QLineEdit;
 class QLabel;
 class QPushButton;
+class QListWidget;
 
 class ClinicSettingsDialog : public QDialog
 {
@@ -11,7 +12,7 @@ public:
     explicit ClinicSettingsDialog(QWidget* parent = nullptr);
 
 signals:
-    void settingsChanged();   // emitted after successful save
+    void settingsChanged();
 
 private slots:
     void browseLogo();
@@ -31,6 +32,8 @@ private:
     QLabel*      m_logoPreview = nullptr;
     QLabel*      m_logoPath    = nullptr;
     QPushButton* m_clearBtn    = nullptr;
+    QListWidget* m_doctorList  = nullptr;
+    QLineEdit*   m_doctorInput = nullptr;
 
     QString      m_pendingLogoPath;
 };
