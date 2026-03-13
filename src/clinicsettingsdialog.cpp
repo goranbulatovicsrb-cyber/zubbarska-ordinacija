@@ -14,6 +14,9 @@
 #include <QDir>
 #include <QFile>
 #include <QScrollArea>
+#include <QListWidget>
+#include <QFrame>
+#include <QCoreApplication>
 
 ClinicSettingsDialog::ClinicSettingsDialog(QWidget* parent)
     : QDialog(parent)
@@ -161,6 +164,54 @@ void ClinicSettingsDialog::setupUi()
     infoForm->addRow(makeLbl("E-mail:"),            m_email);
     bLay->addWidget(infoGroup);
 
+    // ── Doctors section ───────────────────────────────────────────────────────
+    auto* docGroup = new QGroupBox("Lista doktora");
+    docGroup->setStyleSheet(logoGroup->styleSheet());
+    auto* docLay = new QVBoxLayout(docGroup);
+
+    auto* docHint = new QLabel("Doktori ce biti dostupni u padajucem meniju pri unosu intervencije.");
+    docHint->setStyleSheet("color:#757575;font-size:10px;");
+    docHint->setWordWrap(true);
+    docLay->addWidget(docHint);
+
+    m_doctorList = new QListWidget;
+    m_doctorList->setFixedHeight(100);
+    m_doctorList->setStyleSheet(
+        "QListWidget{border:1px solid #BDBDBD;border-radius:4px;background:white;}"
+        "QListWidget::item{padding:4px 8px;}"
+        "QListWidget::item:selected{background:#E3F2FD;color:#1565C0;}");
+    docLay->addWidget(m_doctorList);
+
+    auto* docInputRow = new QHBoxLayout;
+    m_doctorInput = new QLineEdit;
+    m_doctorInput->setPlaceholderText("Ime doktora (npr. Dr. Petrovic)");
+    m_doctorInput->setStyleSheet(fieldStyle);
+    auto* addDocBtn = new QPushButton("Dodaj");
+    addDocBtn->setStyleSheet(
+        "QPushButton{background:#00695C;color:white;border-radius:4px;"
+        "border:none;padding:6px 14px;font-weight:bold;}"
+        "QPushButton:hover{background:#00897B;}");
+    auto* delDocBtn = new QPushButton("Ukloni");
+    delDocBtn->setStyleSheet(
+        "QPushButton{background:#EF5350;color:white;border-radius:4px;"
+        "border:none;padding:6px 14px;font-weight:bold;}"
+        "QPushButton:hover{background:#E53935;}");
+    docInputRow->addWidget(m_doctorInput, 1);
+    docInputRow->addWidget(addDocBtn);
+    docInputRow->addWidget(delDocBtn);
+    docLay->addLayout(docInputRow);
+    bLay->addWidget(docGroup);
+
+    connect(addDocBtn, &QPushButton::clicked, [this](){
+        QString name = m_doctorInput->text().trimmed();
+        if (name.isEmpty()) return;
+        m_doctorList->addItem(name);
+        m_doctorInput->clear();
+    });
+    connect(delDocBtn, &QPushButton::clicked, [this](){
+        delete m_doctorList->takeItem(m_doctorList->currentRow());
+    });
+
     // Preview note
     auto* note = new QLabel(
         "Naziv i logo se prikazuju u zaglavlju programa i na svim stampanjima.");
@@ -215,6 +266,11 @@ void ClinicSettingsDialog::loadCurrentValues()
     m_email->setText(cs.clinicEmail);
     m_pendingLogoPath = cs.logoPath;
     updateLogoPreview();
+
+    // Load doctors
+    m_doctorList->clear();
+    for (const auto& d : cs.doctors)
+        m_doctorList->addItem(d);
 }
 
 void ClinicSettingsDialog::browseLogo()
@@ -287,23 +343,27 @@ void ClinicSettingsDialog::accept()
     cs.clinicPhone    = m_phone->text().trimmed();
     cs.clinicEmail    = m_email->text().trimmed();
 
-    // Copy logo to app data folder so it's always available
+    // Copy logo next to exe so it travels with the program
     if (!m_pendingLogoPath.isEmpty()) {
-        QString destDir = QStandardPaths::writableLocation(
-                              QStandardPaths::AppDataLocation) + "/branding";
-        QDir().mkpath(destDir);
+        QString exeDir = QCoreApplication::applicationDirPath();
         QFileInfo fi(m_pendingLogoPath);
-        QString destPath = destDir + "/logo." + fi.suffix().toLower();
-        // Overwrite if exists
-        if (QFile::exists(destPath)) QFile::remove(destPath);
-        if (QFile::copy(m_pendingLogoPath, destPath))
-            cs.logoPath = destPath;
-        else
-            cs.logoPath = m_pendingLogoPath; // fallback to original
+        QString destPath = exeDir + "/logo." + fi.suffix().toLower();
+        // If source is already in exe folder, just use it
+        if (QFileInfo(m_pendingLogoPath).absolutePath() != QFileInfo(exeDir).absolutePath()) {
+            if (QFile::exists(destPath)) QFile::remove(destPath);
+            QFile::copy(m_pendingLogoPath, destPath);
+        }
+        cs.logoPath = destPath;
     } else {
         cs.logoPath = "";
     }
 
+    cs.save();
+    // Save doctors
+    QStringList docs;
+    for (int i = 0; i < m_doctorList->count(); ++i)
+        docs << m_doctorList->item(i)->text();
+    cs.doctors = docs;
     cs.save();
     emit settingsChanged();
     QDialog::accept();
